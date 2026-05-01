@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mashify</title>
+  <style>
+    body { background:#0b0b0f; color:white; font-family:Arial; text-align:center; padding:40px; }
+    h1 { color:#00ffcc; }
+    button { padding:10px 20px; margin:10px; background:#00ffcc; border:none; cursor:pointer; }
+    audio { margin-top:20px; width:300px; }
+  </style>
+</head>
+<body>
+
+<h1>Mashify 🎧</h1>
+
+<input type="file" id="song1"><br>
+<button onclick="upload1()">Upload Song 1</button>
+
+<br><br>
+
+<input type="file" id="song2"><br>
+<button onclick="upload2()">Upload Song 2</button>
+
+<br><br>
+
+<button onclick="mash()">Mash It Up 🔥</button>
+
+<p id="status"></p>
+
+<audio id="out" controls></audio>
+
+<script>
+let a = "", b = "";
+
+async function upload1(){
+  const f = document.getElementById("song1").files[0];
+  const form = new FormData();
+  form.append("file", f);
+
+  const res = await fetch("/api/upload", { method:"POST", body:form });
+  const data = await res.json();
+  a = data.url;
+  document.getElementById("status").innerText = "Song 1 ready";
+}
+
+async function upload2(){
+  const f = document.getElementById("song2").files[0];
+  const form = new FormData();
+  form.append("file", f);
+
+  const res = await fetch("/api/upload", { method:"POST", body:form });
+  const data = await res.json();
+  b = data.url;
+  document.getElementById("status").innerText = "Song 2 ready";
+}
+
+async function mash(){
+  const res = await fetch("/api/mash", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ a, b })
+  });
+
+  const blob = await res.blob();
+  document.getElementById("out").src = URL.createObjectURL(blob);
+}
+</script>
+
+</body>
+</html>
