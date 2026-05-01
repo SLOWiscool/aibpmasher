@@ -2,206 +2,256 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Mini DJ Beatmatcher</title>
+<title>BPM Morph DJ Engine</title>
 <style>
-  body {
-    margin: 0;
-    background: #0b0b0f;
-    color: white;
-    font-family: Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
+body {
+  margin: 0;
+  background: #0b0b10;
+  color: white;
+  font-family: Arial;
+  text-align: center;
+}
 
-  h1 { margin: 20px; }
+h1 { margin: 20px; }
 
-  .container {
-    display: flex;
-    gap: 20px;
-  }
+.container {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
 
-  .deck {
-    background: #16161d;
-    padding: 15px;
-    border-radius: 12px;
-    width: 300px;
-  }
+.deck {
+  background: #161621;
+  padding: 15px;
+  border-radius: 12px;
+  width: 300px;
+}
 
-  input, button, slider {
-    width: 100%;
-    margin-top: 10px;
-  }
+button, input {
+  width: 100%;
+  margin-top: 10px;
+}
 
-  button {
-    padding: 10px;
-    border: none;
-    background: #2b6cff;
-    color: white;
-    cursor: pointer;
-    border-radius: 6px;
-  }
+button {
+  padding: 10px;
+  background: #2d6cff;
+  color: white;
+  border: none;
+  cursor: pointer;
+  border-radius: 6px;
+}
 
-  button:hover { background: #1f4fc9; }
+button:hover { background: #1e4fc2; }
 
-  .led {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: #333;
-    margin-top: 10px;
-  }
+canvas {
+  width: 100%;
+  height: 60px;
+  background: #0f0f18;
+  margin-top: 10px;
+}
 
-  .led.active {
-    background: #00ff88;
-    box-shadow: 0 0 15px #00ff88;
-  }
+.led {
+  width: 15px;
+  height: 15px;
+  background: #333;
+  border-radius: 50%;
+  margin: 10px auto;
+}
 
-  canvas {
-    width: 100%;
-    height: 60px;
-    background: #0f0f14;
-    margin-top: 10px;
-  }
+.led.active {
+  background: #00ff88;
+  box-shadow: 0 0 10px #00ff88;
+}
 
-  .sync {
-    margin-top: 20px;
-    width: 200px;
-  }
+#transitionBtn {
+  margin-top: 20px;
+  width: 250px;
+  background: #ff3c6f;
+}
 </style>
 </head>
 <body>
 
-<h1>🎧 Mini DJ Beatmatcher</h1>
+<h1>🎧 BPM Morph DJ Engine</h1>
 
 <div class="container">
 
-  <div class="deck" id="deckA">
+  <div class="deck">
     <h3>Deck A</h3>
-    <input type="file" accept="audio/*" id="fileA">
-    <button onclick="playDeck('A')">Play</button>
-    <button onclick="stopDeck('A')">Stop</button>
-    <input type="range" min="0.5" max="2" step="0.01" value="1" id="rateA">
+    <input type="file" id="fileA" />
+    <button onclick="play('A')">Play</button>
+    <button onclick="stop('A')">Stop</button>
     <canvas id="waveA"></canvas>
     <div class="led" id="ledA"></div>
   </div>
 
-  <div class="deck" id="deckB">
+  <div class="deck">
     <h3>Deck B</h3>
-    <input type="file" accept="audio/*" id="fileB">
-    <button onclick="playDeck('B')">Play</button>
-    <button onclick="stopDeck('B')">Stop</button>
-    <input type="range" min="0.5" max="2" step="0.01" value="1" id="rateB">
+    <input type="file" id="fileB" />
+    <button onclick="play('B')">Play</button>
+    <button onclick="stop('B')">Stop</button>
     <canvas id="waveB"></canvas>
     <div class="led" id="ledB"></div>
   </div>
 
 </div>
 
-<button class="sync" onclick="syncDecks()">SYNC B → A</button>
+<button id="transitionBtn" onclick="startBPMMorph()">🎛️ START BPM MORPH</button>
 
 <script>
-const AudioCtx = window.AudioContext || window.webkitAudioContext;
-const ctx = new AudioCtx();
+const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+let targetBPM = 128;
 
 let decks = {
-  A: { buffer: null, source: null, bpm: 120, rate: 1 },
-  B: { buffer: null, source: null, bpm: 120, rate: 1 }
+  A: { buffer: null, source: null, bpm: 120, gain: null, rate: 1 },
+  B: { buffer: null, source: null, bpm: 120, gain: null, rate: 1 }
 };
 
-// ---------- LOAD FILE ----------
-document.getElementById("fileA").onchange = e => loadFile(e, "A");
-document.getElementById("fileB").onchange = e => loadFile(e, "B");
+let transition = {
+  duration: 15,
+  active: false
+};
 
-async function loadFile(e, deck) {
+// ---------------- FILE LOAD ----------------
+document.getElementById("fileA").onchange = e => load(e, "A");
+document.getElementById("fileB").onchange = e => load(e, "B");
+
+async function load(e, deck) {
   const file = e.target.files[0];
-  const arrayBuffer = await file.arrayBuffer();
-  const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+  const buf = await file.arrayBuffer();
+  const audio = await ctx.decodeAudioData(buf);
 
-  decks[deck].buffer = audioBuffer;
-  decks[deck].bpm = estimateBPM(audioBuffer);
+  decks[deck].buffer = audio;
+  decks[deck].bpm = estimateBPM(audio);
 
-  drawWave(deck, audioBuffer);
-  alert(`Deck ${deck} loaded. BPM ≈ ${decks[deck].bpm.toFixed(1)}`);
+  drawWave(deck, audio);
+
+  alert(`Deck ${deck} BPM ≈ ${decks[deck].bpm.toFixed(1)}`);
 }
 
-// ---------- SIMPLE BPM DETECTION ----------
+// ---------------- BPM ESTIMATION ----------------
 function estimateBPM(buffer) {
   const data = buffer.getChannelData(0);
-  const sampleRate = buffer.sampleRate;
+  const sr = buffer.sampleRate;
 
   let peaks = [];
-  let threshold = 0.3;
-  let lastPeak = 0;
+  let last = 0;
 
   for (let i = 0; i < data.length; i++) {
-    if (data[i] > threshold && i - lastPeak > sampleRate * 0.3) {
+    if (data[i] > 0.35 && i - last > sr * 0.25) {
       peaks.push(i);
-      lastPeak = i;
+      last = i;
     }
   }
 
   let intervals = [];
   for (let i = 1; i < peaks.length; i++) {
-    intervals.push((peaks[i] - peaks[i - 1]) / sampleRate);
+    intervals.push((peaks[i] - peaks[i - 1]) / sr);
   }
 
   let avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
   return 60 / avg || 120;
 }
 
-// ---------- PLAY ----------
-function playDeck(deck) {
-  stopDeck(deck);
+// ---------------- PLAY ----------------
+function play(d) {
+  stop(d);
 
-  const d = decks[deck];
-  if (!d.buffer) return;
+  const deck = decks[d];
+  if (!deck.buffer) return;
 
-  const source = ctx.createBufferSource();
+  const src = ctx.createBufferSource();
   const gain = ctx.createGain();
 
-  source.buffer = d.buffer;
-  source.playbackRate.value = d.rate;
+  deck.gain = gain;
 
-  source.connect(gain);
+  src.buffer = deck.buffer;
+  src.playbackRate.value = deck.rate;
+
+  src.connect(gain);
   gain.connect(ctx.destination);
 
-  source.start(0);
+  src.start();
 
-  decks[deck].source = source;
+  deck.source = src;
 
-  beatFlash(deck, d.bpm);
+  beatLED(d, deck.bpm);
 }
 
-// ---------- STOP ----------
-function stopDeck(deck) {
-  if (decks[deck].source) {
-    try { decks[deck].source.stop(); } catch {}
-    decks[deck].source = null;
+// ---------------- STOP ----------------
+function stop(d) {
+  if (decks[d].source) {
+    try { decks[d].source.stop(); } catch {}
+    decks[d].source = null;
   }
 }
 
-// ---------- RATE SLIDERS ----------
-document.getElementById("rateA").oninput = e => {
-  decks.A.rate = parseFloat(e.target.value);
-};
-document.getElementById("rateB").oninput = e => {
-  decks.B.rate = parseFloat(e.target.value);
-};
-
-// ---------- SYNC FUNCTION ----------
-function syncDecks() {
-  const ratio = decks.A.bpm / decks.B.bpm;
-  decks.B.rate = ratio;
-  document.getElementById("rateB").value = ratio;
-
-  playDeck("A");
-  playDeck("B");
+// ---------------- SYNC UTIL ----------------
+function nextDownbeat(time, bpm) {
+  const beat = 60 / bpm;
+  return Math.ceil(time / beat) * beat;
 }
 
-// ---------- BEAT LED ----------
-function beatFlash(deck, bpm) {
-  const led = document.getElementById("led" + deck);
+// ---------------- BPM MORPH ENGINE ----------------
+function startBPMMorph() {
+  const now = ctx.currentTime;
+
+  const A = decks.A;
+  const B = decks.B;
+
+  if (!A.buffer || !B.buffer) return;
+
+  stop("A");
+  stop("B");
+
+  const startTime = nextDownbeat(now, A.bpm);
+
+  const srcA = ctx.createBufferSource();
+  const srcB = ctx.createBufferSource();
+
+  const gainA = ctx.createGain();
+  const gainB = ctx.createGain();
+
+  srcA.buffer = A.buffer;
+  srcB.buffer = B.buffer;
+
+  srcA.connect(gainA);
+  srcB.connect(gainB);
+
+  gainA.connect(ctx.destination);
+  gainB.connect(ctx.destination);
+
+  const duration = transition.duration;
+
+  const aTarget = targetBPM / A.bpm;
+  const bTarget = targetBPM / B.bpm;
+
+  // initial
+  srcA.playbackRate.setValueAtTime(1, startTime);
+  srcB.playbackRate.setValueAtTime(1, startTime);
+
+  gainA.gain.setValueAtTime(1, startTime);
+  gainB.gain.setValueAtTime(0, startTime);
+
+  // BPM morph
+  srcA.playbackRate.linearRampToValueAtTime(aTarget, startTime + duration);
+  srcB.playbackRate.linearRampToValueAtTime(bTarget, startTime + duration);
+
+  // crossfade
+  gainA.gain.linearRampToValueAtTime(0, startTime + duration);
+  gainB.gain.linearRampToValueAtTime(1, startTime + duration);
+
+  srcA.start(startTime);
+  srcB.start(startTime);
+
+  A.source = srcA;
+  B.source = srcB;
+}
+
+// ---------------- LED BEAT ----------------
+function beatLED(d, bpm) {
+  const led = document.getElementById("led" + d);
   const interval = 60000 / bpm;
 
   setInterval(() => {
@@ -210,27 +260,26 @@ function beatFlash(deck, bpm) {
   }, interval);
 }
 
-// ---------- WAVEFORM ----------
-function drawWave(deck, buffer) {
-  const canvas = document.getElementById("wave" + deck);
-  const ctx2 = canvas.getContext("2d");
+// ---------------- WAVEFORM ----------------
+function drawWave(d, buffer) {
+  const canvas = document.getElementById("wave" + d);
+  const c = canvas.getContext("2d");
 
   const data = buffer.getChannelData(0);
 
-  ctx2.clearRect(0, 0, canvas.width, canvas.height);
-  ctx2.beginPath();
+  c.beginPath();
 
   let step = Math.floor(data.length / canvas.width);
 
   for (let i = 0; i < canvas.width; i++) {
     let v = data[i * step] * 50;
-    ctx2.lineTo(i, canvas.height / 2 + v);
+    c.lineTo(i, canvas.height / 2 + v);
   }
 
-  ctx2.strokeStyle = "#00ff88";
-  ctx2.stroke();
+  c.strokeStyle = "#00ff88";
+  c.stroke();
 }
 </script>
 
 </body>
-  </html>
+</html>
