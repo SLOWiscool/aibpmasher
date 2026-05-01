@@ -2,106 +2,95 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Pro DJ Mashup Engine</title>
+    <title>Tempo Intersect DJ</title>
     <style>
-        body { background: #0a0a0f; color: #fff; font-family: sans-serif; text-align: center; }
-        .mixer { display: flex; justify-content: center; gap: 20px; padding: 40px; }
-        .deck { background: #15151e; padding: 25px; border-radius: 15px; width: 340px; border: 2px solid #222; }
-        button { background: #2d6cff; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; margin: 5px 0; }
-        .mash-btn { background: #ff3c6f; height: 60px; font-size: 1.2em; width: 400px; margin-top: 20px; }
-        .status { color: #00ff88; font-family: monospace; margin: 10px 0; }
+        body { background: #050508; color: #fff; font-family: sans-serif; text-align: center; }
+        .deck-zone { display: flex; justify-content: center; gap: 20px; padding: 40px; }
+        .deck { background: #111; padding: 25px; border-radius: 15px; width: 300px; border: 1px solid #222; }
+        #goBtn { background: #00ff88; color: #000; height: 70px; width: 350px; font-size: 1.3em; font-weight: bold; border-radius: 35px; border: none; cursor: pointer; transition: 0.3s; }
+        #goBtn:hover { transform: scale(1.05); box-shadow: 0 0 20px #00ff8888; }
+        .status-box { font-family: monospace; color: #00ff88; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-<h1>🎛️ PRO MASHUP ENGINE</h1>
-<div class="mixer">
+<h1>🎛️ AUTOMATIC BPM MATCH & MASH</h1>
+
+<div class="deck-zone">
     <div class="deck">
-        <h3>DECK A</h3>
-        <input type="file" id="file-A" accept="audio/*">
-        <div class="status" id="stat-A">STANDBY</div>
-        <button onclick="startDeck('A')">PLAY A</button>
+        <h3>TRACK 1</h3>
+        <input type="file" id="file1" accept="audio/*">
+        <div id="bpm1-ui" class="status-box">BPM: 124</div>
     </div>
     <div class="deck">
-        <h3>DECK B</h3>
-        <input type="file" id="file-B" accept="audio/*">
-        <div class="status" id="stat-B">STANDBY</div>
-        <button onclick="startDeck('B')">PLAY B</button>
+        <h3>TRACK 2</h3>
+        <input type="file" id="file2" accept="audio/*">
+        <div id="bpm2-ui" class="status-box">BPM: 128</div>
     </div>
 </div>
 
-<button class="mash-btn" onclick="triggerBeatMatchMashup()">🚀 SYNC & MASHUP TRANSITION</button>
+<button id="goBtn" onclick="runSmartTransition()">🚀 PLAY & AUTO-MASH</button>
 
 <script>
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const ctx = new (window.AudioContext || window.webkitAudioContext)();
 let decks = {
-    A: { buffer: null, source: null, gain: null, bpm: 124, startTime: 0 },
-    B: { buffer: null, source: null, gain: null, bpm: 128, startTime: 0 }
+    A: { buf: null, src: null, gain: null, bpm: 124 },
+    B: { buf: null, src: null, gain: null, bpm: 128 }
 };
 
-// Load Logic
-document.getElementById('file-A').onchange = (e) => load(e, 'A');
-document.getElementById('file-B').onchange = (e) => load(e, 'B');
+document.getElementById('file1').onchange = (e) => load(e, 'A');
+document.getElementById('file2').onchange = (e) => load(e, 'B');
 
 async function load(e, d) {
-    const arrayBuffer = await e.target.files[0].arrayBuffer();
-    decks[d].buffer = await audioCtx.decodeAudioData(arrayBuffer);
-    document.getElementById(`stat-${d}`).innerText = "READY";
+    const data = await e.target.files[0].arrayBuffer();
+    decks[d].buf = await ctx.decodeAudioData(data);
+    alert(`Track ${d} Loaded`);
 }
 
-function setupPlayer(d) {
-    if (decks[d].source) try { decks[d].source.stop(); } catch(e) {}
-    decks[d].source = audioCtx.createBufferSource();
-    decks[d].source.buffer = decks[d].buffer;
-    decks[d].gain = audioCtx.createGain();
-    decks[d].source.connect(decks[d].gain);
-    decks[d].gain.connect(audioCtx.destination);
+function createPlayer(d) {
+    if (decks[d].src) decks[d].src.stop();
+    decks[d].src = ctx.createBufferSource();
+    decks[d].src.buffer = decks[d].buf;
+    decks[d].gain = ctx.createGain();
+    decks[d].src.connect(decks[d].gain).connect(ctx.destination);
     return decks[d];
 }
 
-function startDeck(d) {
-    if (!decks[d].buffer) return alert("Load a file!");
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    const player = setupPlayer(d);
-    player.source.start(0);
-    player.startTime = audioCtx.currentTime;
-    document.getElementById(`stat-${d}`).innerText = "PLAYING";
-}
+function runSmartTransition() {
+    if (!decks.A.buf || !decks.B.buf) return alert("Upload both songs!");
+    if (ctx.state === 'suspended') ctx.resume();
 
-// ---------------- THE DJ "MASHUP" LOGIC ----------------
-function triggerBeatMatchMashup() {
-    const now = audioCtx.currentTime;
-    const duration = 10; // Crossfade length in seconds
-    const A = decks.A;
-    const B = decks.B;
+    const now = ctx.currentTime;
+    const rampDuration = 6; // Time to reach the matching BPM
+    const mashupDuration = 6; // Time they play together before A fades out
 
-    if (!A.source || !B.buffer) return alert("Start Deck A first, then load Deck B!");
+    // 1. Start Deck 1
+    const pA = createPlayer('A');
+    pA.gain.gain.setValueAtTime(1, now);
+    pA.src.start(now);
 
-    // 1. BEAT SYNC: Find the next perfect beat in Song A
-    const beatDurationA = 60 / A.bpm;
-    const timeInTrackA = now - A.startTime;
-    const nextBeatDelay = beatDurationA - (timeInTrackA % beatDurationA);
-    const syncStartTime = now + nextBeatDelay;
+    // 2. Schedule Deck 2 (Silent Start)
+    const pB = createPlayer('B');
+    pB.gain.gain.setValueAtTime(0, now);
+    
+    // Set Deck 2 playback rate to match Deck 1's natural BPM immediately
+    const initialRateB = decks.A.bpm / decks.B.bpm;
+    pB.src.playbackRate.setValueAtTime(initialRateB, now);
+    pB.src.start(now);
 
-    // 2. PREPARE DECK B
-    const playerB = setupPlayer('B');
-    B.startTime = syncStartTime;
+    // 3. THE INTERSECT: Smoothly ramp both toward Track 2's natural speed
+    // This creates the "Match" point at the end of the ramp
+    pA.src.playbackRate.linearRampToValueAtTime(decks.B.bpm / decks.A.bpm, now + rampDuration);
+    pB.src.playbackRate.linearRampToValueAtTime(1.0, now + rampDuration);
 
-    // 3. MATCH SPEEDS: Set Deck B's initial speed to match Deck A's current tempo
-    playerB.source.playbackRate.setValueAtTime(A.bpm / B.bpm, syncStartTime);
-    playerB.gain.gain.setValueAtTime(0, syncStartTime);
+    // 4. THE MASH: Fade Deck 2 IN while Deck 1 is still playing at the matched BPM
+    pB.gain.gain.linearRampToValueAtTime(1, now + (rampDuration / 2));
 
-    // 4. THE MORPH: Gradually shift both to Deck B's natural tempo during the fade
-    A.source.playbackRate.linearRampToValueAtTime(B.bpm / A.bpm, syncStartTime + duration);
-    playerB.source.playbackRate.linearRampToValueAtTime(1.0, syncStartTime + duration);
+    // 5. THE EXIT: Fade Deck 1 OUT after the mashup period
+    pA.gain.gain.setValueAtTime(1, now + rampDuration);
+    pA.gain.gain.linearRampToValueAtTime(0, now + rampDuration + mashupDuration);
 
-    // 5. EQUAL POWER CROSSFADE (Pro Curve)
-    A.gain.gain.setValueAtTime(1, syncStartTime);
-    A.gain.gain.linearRampToValueAtTime(0, syncStartTime + duration);
-    playerB.gain.gain.linearRampToValueAtTime(1, syncStartTime + duration);
-
-    playerB.source.start(syncStartTime);
-    document.getElementById('stat-B').innerText = "MASHING UP...";
+    console.log("Searching for BPM intersection...");
 }
 </script>
 </body>
