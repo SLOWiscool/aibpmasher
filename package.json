@@ -1,14 +1,14 @@
 {
   "name": "mashify",
   "version": "1.0.0",
-  "description": "AI music mashup engine",
+  "description": "Simple AI-style audio mashup engine",
   "main": "index.js",
   "scripts": {
-    "start": "vercel dev",
-    "dev": "vercel dev"
+    "dev": "vercel dev",
+    "start": "vercel dev"
   },
   "dependencies": {
     "fluent-ffmpeg": "^2.1.3",
-    "uuid": "^9.0.1"
+    "@ffmpeg-installer/ffmpeg": "^1.1.0"
   }
 }
