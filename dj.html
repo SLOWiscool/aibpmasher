@@ -2,138 +2,106 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Pro BPM Morph DJ</title>
+    <title>Pro DJ Mashup Engine</title>
     <style>
-        body { background: #0f0f13; color: #fff; font-family: 'Segoe UI', sans-serif; text-align: center; margin: 0; }
-        .mixer { display: flex; justify-content: center; gap: 30px; padding: 40px; }
-        .deck { background: #1a1a24; padding: 25px; border-radius: 15px; width: 320px; border: 1px solid #333; }
-        .controls { margin-top: 20px; }
-        button { background: #3a86ff; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
-        button:hover { background: #2a6fdf; }
-        input[type="file"] { font-size: 12px; margin-bottom: 15px; }
-        .crossfader-zone { margin: 20px auto; width: 400px; }
-        input[type="range"] { width: 100%; cursor: pointer; }
-        #morphBtn { background: #ff0054; width: 250px; font-size: 1.1em; padding: 15px; margin-top: 20px; }
-        .status { color: #00f5d4; font-weight: bold; margin: 10px; font-family: monospace; }
+        body { background: #0a0a0f; color: #fff; font-family: sans-serif; text-align: center; }
+        .mixer { display: flex; justify-content: center; gap: 20px; padding: 40px; }
+        .deck { background: #15151e; padding: 25px; border-radius: 15px; width: 340px; border: 2px solid #222; }
+        button { background: #2d6cff; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; margin: 5px 0; }
+        .mash-btn { background: #ff3c6f; height: 60px; font-size: 1.2em; width: 400px; margin-top: 20px; }
+        .status { color: #00ff88; font-family: monospace; margin: 10px 0; }
     </style>
 </head>
 <body>
 
-<h1>🎧 PRO BPM MORPH ENGINE</h1>
-<p>Upload two tracks, play Deck A, then hit Morph to blend into Deck B.</p>
-
+<h1>🎛️ PRO MASHUP ENGINE</h1>
 <div class="mixer">
-    <!-- DECK A -->
-    <div class="deck" id="ui-A">
+    <div class="deck">
         <h3>DECK A</h3>
         <input type="file" id="file-A" accept="audio/*">
-        <div class="status" id="bpm-A">BPM: --</div>
-        <button onclick="manualPlay('A')">PLAY DECK A</button>
+        <div class="status" id="stat-A">STANDBY</div>
+        <button onclick="startDeck('A')">PLAY A</button>
     </div>
-
-    <!-- DECK B -->
-    <div class="deck" id="ui-B">
+    <div class="deck">
         <h3>DECK B</h3>
         <input type="file" id="file-B" accept="audio/*">
-        <div class="status" id="bpm-B">BPM: --</div>
-        <button onclick="manualPlay('B')">PLAY DECK B</button>
+        <div class="status" id="stat-B">STANDBY</div>
+        <button onclick="startDeck('B')">PLAY B</button>
     </div>
 </div>
 
-<div class="crossfader-zone">
-    <label>Manual Crossfade</label>
-    <input type="range" id="xfade" min="0" max="1" step="0.01" value="0.5" oninput="updateManualXFade(this.value)">
-    <button id="morphBtn" onclick="triggerBpmMorph()">🎛️ TRIGGER AUTO-MORPH</button>
-</div>
+<button class="mash-btn" onclick="triggerBeatMatchMashup()">🚀 SYNC & MASHUP TRANSITION</button>
 
 <script>
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let decks = {
-    A: { buffer: null, source: null, gainNode: null, bpm: 125, startTime: 0 },
-    B: { buffer: null, source: null, gainNode: null, bpm: 128, startTime: 0 }
+    A: { buffer: null, source: null, gain: null, bpm: 124, startTime: 0 },
+    B: { buffer: null, source: null, gain: null, bpm: 128, startTime: 0 }
 };
 
-// 1. Loading Logic
-document.getElementById('file-A').onchange = (e) => loadTrack(e, 'A');
-document.getElementById('file-B').onchange = (e) => loadTrack(e, 'B');
+// Load Logic
+document.getElementById('file-A').onchange = (e) => load(e, 'A');
+document.getElementById('file-B').onchange = (e) => load(e, 'B');
 
-async function loadTrack(e, deckID) {
-    const file = e.target.files[0];
-    const arrayBuffer = await file.arrayBuffer();
-    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-    decks[deckID].buffer = audioBuffer;
-    
-    // Simplistic BPM detection (In a real app, use a library like Meyda)
-    // Here we'll default to 128 if unknown, or you can prompt user
-    document.getElementById(`bpm-${deckID}`).innerText = `BPM: ${decks[deckID].bpm} (Ready)`;
+async function load(e, d) {
+    const arrayBuffer = await e.target.files[0].arrayBuffer();
+    decks[d].buffer = await audioCtx.decodeAudioData(arrayBuffer);
+    document.getElementById(`stat-${d}`).innerText = "READY";
 }
 
-// 2. Playback Engine
-function createSource(deckID) {
-    const deck = decks[deckID];
-    if (deck.source) deck.source.stop();
-
-    deck.source = audioCtx.createBufferSource();
-    deck.source.buffer = deck.buffer;
-    
-    deck.gainNode = audioCtx.createGain();
-    deck.source.connect(deck.gainNode);
-    deck.gainNode.connect(audioCtx.destination);
-    
-    return { source: deck.source, gain: deck.gainNode };
+function setupPlayer(d) {
+    if (decks[d].source) try { decks[d].source.stop(); } catch(e) {}
+    decks[d].source = audioCtx.createBufferSource();
+    decks[d].source.buffer = decks[d].buffer;
+    decks[d].gain = audioCtx.createGain();
+    decks[d].source.connect(decks[d].gain);
+    decks[d].gain.connect(audioCtx.destination);
+    return decks[d];
 }
 
-function manualPlay(deckID) {
-    if (!decks[deckID].buffer) return alert("Load a file first!");
+function startDeck(d) {
+    if (!decks[d].buffer) return alert("Load a file!");
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    
-    const { source } = createSource(deckID);
-    source.start(0);
-    decks[deckID].startTime = audioCtx.currentTime;
+    const player = setupPlayer(d);
+    player.source.start(0);
+    player.startTime = audioCtx.currentTime;
+    document.getElementById(`stat-${d}`).innerText = "PLAYING";
 }
 
-// 3. THE BPM MORPH LOGIC
-function triggerBpmMorph() {
+// ---------------- THE DJ "MASHUP" LOGIC ----------------
+function triggerBeatMatchMashup() {
     const now = audioCtx.currentTime;
-    const duration = 8; // Transition takes 8 seconds
+    const duration = 10; // Crossfade length in seconds
     const A = decks.A;
     const B = decks.B;
 
-    if (!A.source || !B.buffer) return alert("Deck A must be playing and Deck B must be loaded!");
+    if (!A.source || !B.buffer) return alert("Start Deck A first, then load Deck B!");
 
-    // Calculate Sync: Find the next 'beat' of Deck A to start Deck B
+    // 1. BEAT SYNC: Find the next perfect beat in Song A
     const beatDurationA = 60 / A.bpm;
     const timeInTrackA = now - A.startTime;
-    const nextBeatA = Math.ceil(timeInTrackA / beatDurationA) * beatDurationA;
-    const startSyncTime = A.startTime + nextBeatA;
+    const nextBeatDelay = beatDurationA - (timeInTrackA % beatDurationA);
+    const syncStartTime = now + nextBeatDelay;
 
-    // Prepare Deck B
-    const { source: srcB, gain: gainB } = createSource('B');
-    B.startTime = startSyncTime;
+    // 2. PREPARE DECK B
+    const playerB = setupPlayer('B');
+    B.startTime = syncStartTime;
 
-    // Initial States
-    gainB.gain.setValueAtTime(0, startSyncTime);
-    srcB.playbackRate.setValueAtTime(A.bpm / B.bpm, startSyncTime); // Match Deck A's speed
+    // 3. MATCH SPEEDS: Set Deck B's initial speed to match Deck A's current tempo
+    playerB.source.playbackRate.setValueAtTime(A.bpm / B.bpm, syncStartTime);
+    playerB.gain.gain.setValueAtTime(0, syncStartTime);
 
-    // MORPH: Ramp both to a shared target (we'll use Deck B's natural BPM)
-    const targetRateA = B.bpm / A.bpm;
-    const targetRateB = 1.0;
+    // 4. THE MORPH: Gradually shift both to Deck B's natural tempo during the fade
+    A.source.playbackRate.linearRampToValueAtTime(B.bpm / A.bpm, syncStartTime + duration);
+    playerB.source.playbackRate.linearRampToValueAtTime(1.0, syncStartTime + duration);
 
-    // Execute Tempo Ramp
-    A.source.playbackRate.linearRampToValueAtTime(targetRateA, startSyncTime + duration);
-    srcB.playbackRate.linearRampToValueAtTime(targetRateB, startSyncTime + duration);
+    // 5. EQUAL POWER CROSSFADE (Pro Curve)
+    A.gain.gain.setValueAtTime(1, syncStartTime);
+    A.gain.gain.linearRampToValueAtTime(0, syncStartTime + duration);
+    playerB.gain.gain.linearRampToValueAtTime(1, syncStartTime + duration);
 
-    // Execute Volume Crossfade (Equal Power Curve approximation)
-    A.gainNode.gain.linearRampToValueAtTime(0, startSyncTime + duration);
-    gainB.gain.linearRampToValueAtTime(1, startSyncTime + duration);
-
-    srcB.start(startSyncTime);
-    console.log("Morphing initiated...");
-}
-
-function updateManualXFade(val) {
-    if (decks.A.gainNode) decks.A.gainNode.gain.value = 1 - val;
-    if (decks.B.gainNode) decks.B.gainNode.gain.value = val;
+    playerB.source.start(syncStartTime);
+    document.getElementById('stat-B').innerText = "MASHING UP...";
 }
 </script>
 </body>
