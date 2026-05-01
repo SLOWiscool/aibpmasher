@@ -2,95 +2,93 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Tempo Intersect DJ</title>
+    <title>Beat-Lock DJ Transition</title>
     <style>
-        body { background: #050508; color: #fff; font-family: sans-serif; text-align: center; }
-        .deck-zone { display: flex; justify-content: center; gap: 20px; padding: 40px; }
-        .deck { background: #111; padding: 25px; border-radius: 15px; width: 300px; border: 1px solid #222; }
-        #goBtn { background: #00ff88; color: #000; height: 70px; width: 350px; font-size: 1.3em; font-weight: bold; border-radius: 35px; border: none; cursor: pointer; transition: 0.3s; }
-        #goBtn:hover { transform: scale(1.05); box-shadow: 0 0 20px #00ff8888; }
-        .status-box { font-family: monospace; color: #00ff88; margin-top: 10px; }
+        body { background: #050508; color: #fff; font-family: sans-serif; text-align: center; padding: 50px; }
+        .deck-container { display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; }
+        .deck { background: #111; padding: 20px; border-radius: 15px; width: 280px; border: 2px solid #333; }
+        #masterBtn { background: #ff0055; color: white; padding: 20px 50px; font-size: 1.5rem; border-radius: 50px; border: none; cursor: pointer; font-weight: bold; }
+        .status { color: #00ff88; margin-top: 10px; font-family: monospace; height: 20px; }
     </style>
 </head>
 <body>
 
-<h1>🎛️ AUTOMATIC BPM MATCH & MASH</h1>
-
-<div class="deck-zone">
-    <div class="deck">
-        <h3>TRACK 1</h3>
-        <input type="file" id="file1" accept="audio/*">
-        <div id="bpm1-ui" class="status-box">BPM: 124</div>
+    <h1>🎧 BEAT-LOCK TRANSITION</h1>
+    <div class="deck-container">
+        <div class="deck">
+            <h3>SONG 1</h3>
+            <input type="file" id="file1" accept="audio/*">
+            <div id="stat1" class="status"></div>
+        </div>
+        <div class="deck">
+            <h3>SONG 2</h3>
+            <input type="file" id="file2" accept="audio/*">
+            <div id="stat2" class="status"></div>
+        </div>
     </div>
-    <div class="deck">
-        <h3>TRACK 2</h3>
-        <input type="file" id="file2" accept="audio/*">
-        <div id="bpm2-ui" class="status-box">BPM: 128</div>
-    </div>
-</div>
 
-<button id="goBtn" onclick="runSmartTransition()">🚀 PLAY & AUTO-MASH</button>
+    <button id="masterBtn" onclick="initiateDJSwap()">START TRANSITION</button>
 
 <script>
-const ctx = new (window.AudioContext || window.webkitAudioContext)();
-let decks = {
-    A: { buf: null, src: null, gain: null, bpm: 124 },
-    B: { buf: null, src: null, gain: null, bpm: 128 }
-};
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let song1 = { buf: null, src: null, gain: null, bpm: 140 }; // Target BPM 1
+let song2 = { buf: null, src: null, gain: null, bpm: 145 }; // Target BPM 2
 
-document.getElementById('file1').onchange = (e) => load(e, 'A');
-document.getElementById('file2').onchange = (e) => load(e, 'B');
+document.getElementById('file1').onchange = (e) => load(e, song1, 'stat1');
+document.getElementById('file2').onchange = (e) => load(e, song2, 'stat2');
 
-async function load(e, d) {
+async function load(e, song, statId) {
     const data = await e.target.files[0].arrayBuffer();
-    decks[d].buf = await ctx.decodeAudioData(data);
-    alert(`Track ${d} Loaded`);
+    song.buf = await audioCtx.decodeAudioData(data);
+    document.getElementById(statId).innerText = "LOADED";
 }
 
-function createPlayer(d) {
-    if (decks[d].src) decks[d].src.stop();
-    decks[d].src = ctx.createBufferSource();
-    decks[d].src.buffer = decks[d].buf;
-    decks[d].gain = ctx.createGain();
-    decks[d].src.connect(decks[d].gain).connect(ctx.destination);
-    return decks[d];
-}
+function initiateDJSwap() {
+    if (!song1.buf || !song2.buf) return alert("Load both tracks!");
+    if (audioCtx.state === 'suspended') audioCtx.resume();
 
-function runSmartTransition() {
-    if (!decks.A.buf || !decks.B.buf) return alert("Upload both songs!");
-    if (ctx.state === 'suspended') ctx.resume();
+    const now = audioCtx.currentTime;
+    const transitionDuration = 8; // Seconds for the "hand-in-hand" mashup
+    const meetingBPM = (song1.bpm + song2.bpm) / 2; // The "Hand-in-hand" point
 
-    const now = ctx.currentTime;
-    const rampDuration = 6; // Time to reach the matching BPM
-    const mashupDuration = 6; // Time they play together before A fades out
-
-    // 1. Start Deck 1
-    const pA = createPlayer('A');
-    pA.gain.gain.setValueAtTime(1, now);
-    pA.src.start(now);
-
-    // 2. Schedule Deck 2 (Silent Start)
-    const pB = createPlayer('B');
-    pB.gain.gain.setValueAtTime(0, now);
+    // 1. Setup Song 1 (Playing now)
+    song1.src = audioCtx.createBufferSource();
+    song1.src.buffer = song1.buf;
+    song1.gain = audioCtx.createGain();
+    song1.src.connect(song1.gain).connect(audioCtx.destination);
     
-    // Set Deck 2 playback rate to match Deck 1's natural BPM immediately
-    const initialRateB = decks.A.bpm / decks.B.bpm;
-    pB.src.playbackRate.setValueAtTime(initialRateB, now);
-    pB.src.start(now);
+    // 2. Setup Song 2 (Waiting to drop)
+    song2.src = audioCtx.createBufferSource();
+    song2.src.buffer = song2.buf;
+    song2.gain = audioCtx.createGain();
+    song2.src.connect(song2.gain).connect(audioCtx.destination);
 
-    // 3. THE INTERSECT: Smoothly ramp both toward Track 2's natural speed
-    // This creates the "Match" point at the end of the ramp
-    pA.src.playbackRate.linearRampToValueAtTime(decks.B.bpm / decks.A.bpm, now + rampDuration);
-    pB.src.playbackRate.linearRampToValueAtTime(1.0, now + rampDuration);
+    // 3. Start Song 1 immediately
+    song1.src.start(now);
 
-    // 4. THE MASH: Fade Deck 2 IN while Deck 1 is still playing at the matched BPM
-    pB.gain.gain.linearRampToValueAtTime(1, now + (rampDuration / 2));
+    // 4. THE HAND-IN-HAND PROCESS
+    // We wait 2 seconds, then start the "mashup"
+    const mashStart = now + 2;
+    
+    // Ramp Song 1 UP to the meeting BPM (e.g. 140 -> 142.5)
+    song1.src.playbackRate.linearRampToValueAtTime(meetingBPM / song1.bpm, mashStart + transitionDuration);
+    
+    // Drop Song 2 SILENTLY but synced to the meeting BPM
+    song2.src.playbackRate.setValueAtTime(meetingBPM / song2.bpm, mashStart);
+    song2.gain.gain.setValueAtTime(0, mashStart);
+    
+    // 5. THE CROSSFADE (The Swap)
+    // As Song 1 reaches the meeting point, it fades out
+    song1.gain.gain.setValueAtTime(1, mashStart);
+    song1.gain.gain.linearRampToValueAtTime(0, mashStart + transitionDuration);
 
-    // 5. THE EXIT: Fade Deck 1 OUT after the mashup period
-    pA.gain.gain.setValueAtTime(1, now + rampDuration);
-    pA.gain.gain.linearRampToValueAtTime(0, now + rampDuration + mashupDuration);
+    // As Song 2 reaches the meeting point, it fades in
+    song2.gain.gain.linearRampToValueAtTime(1, mashStart + transitionDuration);
 
-    console.log("Searching for BPM intersection...");
+    song2.src.start(mashStart);
+
+    // 6. FINAL STEP: Bring Song 2 to its natural 145 BPM after the swap
+    song2.src.playbackRate.linearRampToValueAtTime(1.0, mashStart + transitionDuration + 2);
 }
 </script>
 </body>
