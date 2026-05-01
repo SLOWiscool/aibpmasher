@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Mini DJ Beatmatcher</title>
+<style>
+  body {
+    margin: 0;
+    background: #0b0b0f;
+    color: white;
+    font-family: Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  h1 { margin: 20px; }
+
+  .container {
+    display: flex;
+    gap: 20px;
+  }
+
+  .deck {
+    background: #16161d;
+    padding: 15px;
+    border-radius: 12px;
+    width: 300px;
+  }
+
+  input, button, slider {
+    width: 100%;
+    margin-top: 10px;
+  }
+
+  button {
+    padding: 10px;
+    border: none;
+    background: #2b6cff;
+    color: white;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+
+  button:hover { background: #1f4fc9; }
+
+  .led {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #333;
+    margin-top: 10px;
+  }
+
+  .led.active {
+    background: #00ff88;
+    box-shadow: 0 0 15px #00ff88;
+  }
+
+  canvas {
+    width: 100%;
+    height: 60px;
+    background: #0f0f14;
+    margin-top: 10px;
+  }
+
+  .sync {
+    margin-top: 20px;
+    width: 200px;
+  }
+</style>
+</head>
+<body>
+
+<h1>🎧 Mini DJ Beatmatcher</h1>
+
+<div class="container">
+
+  <div class="deck" id="deckA">
+    <h3>Deck A</h3>
+    <input type="file" accept="audio/*" id="fileA">
+    <button onclick="playDeck('A')">Play</button>
+    <button onclick="stopDeck('A')">Stop</button>
+    <input type="range" min="0.5" max="2" step="0.01" value="1" id="rateA">
+    <canvas id="waveA"></canvas>
+    <div class="led" id="ledA"></div>
+  </div>
+
+  <div class="deck" id="deckB">
+    <h3>Deck B</h3>
+    <input type="file" accept="audio/*" id="fileB">
+    <button onclick="playDeck('B')">Play</button>
+    <button onclick="stopDeck('B')">Stop</button>
+    <input type="range" min="0.5" max="2" step="0.01" value="1" id="rateB">
+    <canvas id="waveB"></canvas>
+    <div class="led" id="ledB"></div>
+  </div>
+
+</div>
+
+<button class="sync" onclick="syncDecks()">SYNC B → A</button>
+
+<script>
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+const ctx = new AudioCtx();
+
+let decks = {
+  A: { buffer: null, source: null, bpm: 120, rate: 1 },
+  B: { buffer: null, source: null, bpm: 120, rate: 1 }
+};
+
+// ---------- LOAD FILE ----------
+document.getElementById("fileA").onchange = e => loadFile(e, "A");
+document.getElementById("fileB").onchange = e => loadFile(e, "B");
+
+async function loadFile(e, deck) {
+  const file = e.target.files[0];
+  const arrayBuffer = await file.arrayBuffer();
+  const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+
+  decks[deck].buffer = audioBuffer;
+  decks[deck].bpm = estimateBPM(audioBuffer);
+
+  drawWave(deck, audioBuffer);
+  alert(`Deck ${deck} loaded. BPM ≈ ${decks[deck].bpm.toFixed(1)}`);
+}
+
+// ---------- SIMPLE BPM DETECTION ----------
+function estimateBPM(buffer) {
+  const data = buffer.getChannelData(0);
+  const sampleRate = buffer.sampleRate;
+
+  let peaks = [];
+  let threshold = 0.3;
+  let lastPeak = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] > threshold && i - lastPeak > sampleRate * 0.3) {
+      peaks.push(i);
+      lastPeak = i;
+    }
+  }
+
+  let intervals = [];
+  for (let i = 1; i < peaks.length; i++) {
+    intervals.push((peaks[i] - peaks[i - 1]) / sampleRate);
+  }
+
+  let avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+  return 60 / avg || 120;
+}
+
+// ---------- PLAY ----------
+function playDeck(deck) {
+  stopDeck(deck);
+
+  const d = decks[deck];
+  if (!d.buffer) return;
+
+  const source = ctx.createBufferSource();
+  const gain = ctx.createGain();
+
+  source.buffer = d.buffer;
+  source.playbackRate.value = d.rate;
+
+  source.connect(gain);
+  gain.connect(ctx.destination);
+
+  source.start(0);
+
+  decks[deck].source = source;
+
+  beatFlash(deck, d.bpm);
+}
+
+// ---------- STOP ----------
+function stopDeck(deck) {
+  if (decks[deck].source) {
+    try { decks[deck].source.stop(); } catch {}
+    decks[deck].source = null;
+  }
+}
+
+// ---------- RATE SLIDERS ----------
+document.getElementById("rateA").oninput = e => {
+  decks.A.rate = parseFloat(e.target.value);
+};
+document.getElementById("rateB").oninput = e => {
+  decks.B.rate = parseFloat(e.target.value);
+};
+
+// ---------- SYNC FUNCTION ----------
+function syncDecks() {
+  const ratio = decks.A.bpm / decks.B.bpm;
+  decks.B.rate = ratio;
+  document.getElementById("rateB").value = ratio;
+
+  playDeck("A");
+  playDeck("B");
+}
+
+// ---------- BEAT LED ----------
+function beatFlash(deck, bpm) {
+  const led = document.getElementById("led" + deck);
+  const interval = 60000 / bpm;
+
+  setInterval(() => {
+    led.classList.add("active");
+    setTimeout(() => led.classList.remove("active"), 80);
+  }, interval);
+}
+
+// ---------- WAVEFORM ----------
+function drawWave(deck, buffer) {
+  const canvas = document.getElementById("wave" + deck);
+  const ctx2 = canvas.getContext("2d");
+
+  const data = buffer.getChannelData(0);
+
+  ctx2.clearRect(0, 0, canvas.width, canvas.height);
+  ctx2.beginPath();
+
+  let step = Math.floor(data.length / canvas.width);
+
+  for (let i = 0; i < canvas.width; i++) {
+    let v = data[i * step] * 50;
+    ctx2.lineTo(i, canvas.height / 2 + v);
+  }
+
+  ctx2.strokeStyle = "#00ff88";
+  ctx2.stroke();
+}
+</script>
+
+</body>
+  </html>
